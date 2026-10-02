@@ -1,0 +1,376 @@
+import React, { useState, useEffect, useMemo } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+
+// ---------- Konstanten & Hilfen ----------
+
+const PRIORITY_LABEL = {
+  1: "Würde mich freuen",
+  2: "Gerne",
+  3: "Herzenswunsch",
+};
+
+const PRIORITY_STYLE = {
+  1: "bg-slate-100 text-slate-600",
+  2: "bg-amber-100 text-amber-700",
+  3: "bg-rose-100 text-rose-700",
+};
+
+function formatPrice(price) {
+  if (price === null) return "";
+  return price.toLocaleString("de-AT", {
+    style: "currency",
+    currency: "EUR",
+    minimumFractionDigits: price % 1 === 0 ? 0 : 2,
+  });
+}
+
+function loadWishes() {
+  try {
+    const raw = localStorage.getItem("wunschliste-v1");
+    if (raw) return JSON.parse(raw);
+  } catch (e) {
+    // localStorage nicht verfügbar → App läuft trotzdem
+  }
+  return [
+    {
+      id: "demo-1",
+      title: "Espressomaschine",
+      price: 349,
+      link: "",
+      note: "Für perfekten Kaffee am Morgen ☕",
+      priority: 3,
+      reserved: false,
+      createdAt: Date.now() - 100000,
+    },
+    {
+      id: "demo-2",
+      title: "Wanderstiefel",
+      price: 159.9,
+      link: "",
+      note: "Größe 43, wasserdicht",
+      priority: 2,
+      reserved: false,
+      createdAt: Date.now() - 50000,
+    },
+    {
+      id: "demo-3",
+      title: "Buch: „Die Kunst des klaren Denkens“",
+      price: 24,
+      link: "",
+      note: "",
+      priority: 1,
+      reserved: true,
+      createdAt: Date.now() - 20000,
+    },
+  ];
+}
+
+// ---------- Formular ----------
+
+function WishForm({ onAdd }) {
+  const [title, setTitle] = useState("");
+  const [price, setPrice] = useState("");
+  const [link, setLink] = useState("");
+  const [note, setNote] = useState("");
+  const [priority, setPriority] = useState(2);
+
+  const submit = (e) => {
+    e.preventDefault();
+    const trimmed = title.trim();
+    if (!trimmed) return;
+    const parsed = parseFloat(price.replace(",", "."));
+    onAdd({
+      title: trimmed,
+      price: price.trim() !== "" && !isNaN(parsed) ? parsed : null,
+      link: link.trim(),
+      note: note.trim(),
+      priority: priority,
+      reserved: false,
+    });
+    setTitle("");
+    setPrice("");
+    setLink("");
+    setNote("");
+    setPriority(2);
+  };
+
+  return (
+    <form
+      onSubmit={submit}
+      className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
+    >
+      <h2 className="mb-4 text-lg font-semibold text-slate-800">
+        Neuer Wunsch ✨
+      </h2>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <input
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder="Was wünschst du dir?"
+          className="sm:col-span-2 w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+        />
+        <input
+          value={price}
+          onChange={(e) => setPrice(e.target.value)}
+          placeholder="Preis (optional), z. B. 49,90"
+          inputMode="decimal"
+          className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+        />
+        <input
+          value={link}
+          onChange={(e) => setLink(e.target.value)}
+          placeholder="Link (optional)"
+          className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+        />
+        <input
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          placeholder="Notiz, z. B. Größe, Farbe …"
+          className="sm:col-span-2 w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+        />
+      </div>
+      <div className="mt-4 flex flex-wrap items-center gap-2">
+        <span className="mr-1 text-sm text-slate-500">Priorität:</span>
+        {[3, 2, 1].map((p) => (
+          <button
+            key={p}
+            type="button"
+            onClick={() => setPriority(p)}
+            className={`rounded-full px-3.5 py-1.5 text-sm font-medium transition ${
+              priority === p
+                ? "bg-indigo-600 text-white shadow"
+                : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+            }`}
+          >
+            {PRIORITY_LABEL[p]}
+          </button>
+        ))}
+        <button
+          type="submit"
+          className="ml-auto rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow transition hover:bg-indigo-700 active:scale-95"
+        >
+          Hinzufügen
+        </button>
+      </div>
+    </form>
+  );
+}
+
+// ---------- Wunsch-Karte ----------
+
+function WishCard({ wish, onToggleReserve, onDelete }) {
+  return (
+    <motion.li
+      layout
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, scale: 0.95 }}
+      transition={{ duration: 0.2 }}
+      className={`rounded-2xl border bg-white p-4 shadow-sm transition ${
+        wish.reserved
+          ? "border-emerald-200 bg-emerald-50/60"
+          : "border-slate-200"
+      }`}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="flex items-center gap-2">
+            <span
+              className={`font-semibold ${
+                wish.reserved ? "text-emerald-800 line-through" : "text-slate-800"
+              }`}
+            >
+              {wish.title}
+            </span>
+          </p>
+          {wish.price !== null && (
+            <p className="mt-0.5 text-sm font-medium text-indigo-600">
+              {formatPrice(wish.price)}
+            </p>
+          )}
+          {wish.note && (
+            <p className="mt-1 text-sm text-slate-500">{wish.note}</p>
+          )}
+          {wish.link && (
+            <a
+              href={wish.link}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-1 inline-block text-sm text-indigo-500 underline-offset-2 hover:underline"
+            >
+              Zum Link ↗
+            </a>
+          )}
+        </div>
+        <span
+          className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${PRIORITY_STYLE[wish.priority]}`}
+        >
+          {PRIORITY_LABEL[wish.priority]}
+        </span>
+      </div>
+      <div className="mt-3 flex items-center gap-2 border-t border-slate-100 pt-3">
+        <button
+          onClick={() => onToggleReserve(wish.id)}
+          className={`rounded-lg px-3 py-1.5 text-sm font-medium transition active:scale-95 ${
+            wish.reserved
+              ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200"
+              : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+          }`}
+        >
+          {wish.reserved ? "✓ Bereits besorgt" : "Als besorgt markieren"}
+        </button>
+        <button
+          onClick={() => onDelete(wish.id)}
+          className="ml-auto rounded-lg px-2.5 py-1.5 text-sm text-slate-400 transition hover:bg-rose-50 hover:text-rose-500"
+          aria-label="Wunsch löschen"
+        >
+          🗑️
+        </button>
+      </div>
+    </motion.li>
+  );
+}
+
+// ---------- App ----------
+
+export default function App() {
+  const [wishes, setWishes] = useState(loadWishes);
+  const [filter, setFilter] = useState("all");
+  const [sort, setSort] = useState("priority");
+  const [search, setSearch] = useState("");
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("wunschliste-v1", JSON.stringify(wishes));
+    } catch (e) {
+      // Speichern nicht verfügbar – ignorieren
+    }
+  }, [wishes]);
+
+  const addWish = (w) => {
+    const newWish = {
+      ...w,
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      createdAt: Date.now(),
+    };
+    setWishes((prev) => [newWish, ...prev]);
+  };
+
+  const toggleReserve = (id) =>
+    setWishes((prev) =>
+      prev.map((w) => (w.id === id ? { ...w, reserved: !w.reserved } : w))
+    );
+
+  const deleteWish = (id) =>
+    setWishes((prev) => prev.filter((w) => w.id !== id));
+
+  const filtered = useMemo(() => {
+    let list = wishes.filter(
+      (w) =>
+        w.title.toLowerCase().includes(search.toLowerCase()) ||
+        w.note.toLowerCase().includes(search.toLowerCase())
+    );
+    if (filter === "open") list = list.filter((w) => !w.reserved);
+    if (filter === "done") list = list.filter((w) => w.reserved);
+    return [...list].sort((a, b) => {
+      switch (sort) {
+        case "price-asc":
+          return (a.price ?? Infinity) - (b.price ?? Infinity);
+        case "price-desc":
+          return (b.price ?? -Infinity) - (a.price ?? -Infinity);
+        case "newest":
+          return b.createdAt - a.createdAt;
+        default:
+          return (
+            b.priority - a.priority || b.createdAt - a.createdAt
+          );
+      }
+    });
+  }, [wishes, filter, sort, search]);
+
+  const openCount = wishes.filter((w) => !w.reserved).length;
+  const doneCount = wishes.length - openCount;
+  const openTotal = wishes
+    .filter((w) => !w.reserved)
+    .reduce((sum, w) => sum + (w.price ?? 0), 0);
+
+  return (
+    <div className="min-h-screen bg-slate-50 px-4 py-8 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-2xl">
+        <header className="mb-6">
+          <h1 className="text-3xl font-bold tracking-tight text-slate-900">
+            🎁 Meine Wunschliste
+          </h1>
+          <p className="mt-1 text-sm text-slate-500">
+            {wishes.length === 0
+              ? "Noch keine Wünsche – füge deinen ersten hinzu!"
+              : `${openCount} offen · ${doneCount} besorgt · offen zusammen ${formatPrice(
+                  openTotal
+                )}`}
+          </p>
+        </header>
+
+        <WishForm onAdd={addWish} />
+
+        <div className="mt-5 flex flex-wrap items-center gap-2">
+          {[
+            ["all", "Alle"],
+            ["open", "Offen"],
+            ["done", "Besorgt"],
+          ].map(([key, label]) => (
+            <button
+              key={key}
+              onClick={() => setFilter(key)}
+              className={`rounded-full px-3.5 py-1.5 text-sm font-medium transition ${
+                filter === key
+                  ? "bg-slate-900 text-white"
+                  : "bg-white text-slate-600 shadow-sm hover:bg-slate-100"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Suchen …"
+            className="ml-auto w-36 rounded-full border border-slate-200 bg-white px-3.5 py-1.5 text-sm outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+          />
+          <select
+            value={sort}
+            onChange={(e) => setSort(e.target.value)}
+            className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-600 outline-none"
+          >
+            <option value="priority">Nach Priorität</option>
+            <option value="price-asc">Preis aufsteigend</option>
+            <option value="price-desc">Preis absteigend</option>
+            <option value="newest">Neueste zuerst</option>
+          </select>
+        </div>
+
+        <ul className="mt-4 grid gap-3">
+          <AnimatePresence mode="popLayout">
+            {filtered.map((w) => (
+              <WishCard
+                key={w.id}
+                wish={w}
+                onToggleReserve={toggleReserve}
+                onDelete={deleteWish}
+              />
+            ))}
+          </AnimatePresence>
+        </ul>
+
+        {filtered.length === 0 && (
+          <p className="mt-10 text-center text-sm text-slate-400">
+            Keine Wünsche gefunden. 🦄
+          </p>
+        )}
+
+        <p className="mt-8 text-center text-xs text-slate-400">
+          Deine Wünsche werden automatisch im Browser gespeichert.
+        </p>
+      </div>
+    </div>
+  );
+}
